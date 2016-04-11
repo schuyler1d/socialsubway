@@ -63,6 +63,7 @@ from __future__ import division
 import itertools
 import multiprocessing
 import operator
+import random
 from collections import namedtuple
 from optparse import OptionParser
 from optparse import OptionGroup
@@ -128,7 +129,7 @@ def dotproduct(vec1, vec2):
     >>> dotproduct(v1, v3)
     0
     """
-    return sum(itertools.imap(operator.mul, vec1, vec2))
+    return sum(map(operator.mul, vec1, vec2))
 
 
 def difference(vec1, vec2):
@@ -382,33 +383,48 @@ class ImageList(object):
             try:
                 color = average_color(img)
                 qcolor = quantize_color(color)
-                self._img_list.setdefault(qcolor, list()).append((color,img.filename))
+                self._img_list.setdefault(qcolor, list()).append((color,[img.filename, False]))
             except:
                 print("failed some how: "+str(img))
 
-    def search(self, color):
+    def search(self, color, whenskip=0, skip_list=[]):
         """Search the most similar image in terms of average color."""
         # first find the group of images having the same quantized
         # average color.
         qcolor = quantize_color(color)
         best_img_list = None
         best_dist = None
-        for (current_color, img_list) in self._img_list.iteritems():
+        best_backukp = []
+        next_skip_list = [a for a in skip_list] #copy
+        for (current_color, img_list) in self._img_list.items():
             dist = squaredistance(qcolor, current_color)
             if best_dist is None or dist < best_dist:
+                best_backup = [dist, img_list]
+                if current_color in skip_list:
+                    continue
+                next_skip_list.append(current_color)
                 best_dist = dist
                 best_img_list = img_list
         # now spot which of the images in the list is equal to the
         # target one.
+        if best_dist is None:
+            best_dist, best_img_list  = best_backup
+            next_skip_list = []
         best_filename = None
+        best_backup = None
         best_dist = None
         for (current_color, filename) in best_img_list:
             dist = squaredistance(color, current_color)
             if best_dist is None or dist < best_dist:
-                best_dist = dist
-                best_filename = filename
+                best_backup = filename
+                if not filename[1] or whenskip <= random.random():
+                    best_dist = dist
+                    best_filename = filename
         # finally return the best match.
-        return best_filename
+        if best_filename is None:
+            return self.search(color, whenskip * 0.9, next_skip_list)
+        best_filename[1] = True
+        return best_filename[0]
 
 
 def lattice(width, height, rectangles_per_size):
@@ -427,8 +443,8 @@ def lattice(width, height, rectangles_per_size):
     """
     (tile_width, tile_height) = (width // rectangles_per_size,
                                  height // rectangles_per_size)
-    for i in xrange(rectangles_per_size):
-        for j in xrange(rectangles_per_size):
+    for i in range(rectangles_per_size):
+        for j in range(rectangles_per_size):
             (x_offset, y_offset) = (j * tile_width, i * tile_height)
             yield (x_offset, y_offset,
                    x_offset + tile_width, y_offset + tile_height)
@@ -471,13 +487,15 @@ def extract_average_colors(img, rectangles, pool, workers):
     return flatten(pool.map(partial(_extract_average_colors, img.filename),
                             splitter(workers, rectangles)))
 
-def _search_matching_images(image_list, avg_colors):
+def _search_matching_images(image_list, whenskip, avg_colors):
     """Gets the name of tiles that best match the given list of colors."""
-    return [image_list.search(color) for color in avg_colors]
+    return [image_list.search(color, whenskip) for color in avg_colors]
 
 
-def search_matching_images(image_list, avg_colors, pool, workers):
-    return flatten(pool.map(partial(_search_matching_images, image_list),
+def search_matching_images(image_list, avg_colors, pool, workers, whenskip=0):
+    print ('whenskip', whenskip)
+    smi = partial(_search_matching_images, image_list, whenskip)
+    return flatten(pool.map(smi,
                             splitter(workers, avg_colors)))
 
 
@@ -548,29 +566,45 @@ def mosaicify(target, sources, tiles=32, zoom=1):
     pool = multiprocessing.Pool(workers)
 
     # Load tiles into memory and resize them accordingly
-    source_tiles = dict(itertools.izip(sources,
-                                       load_raw_tiles(sources,
-                                                  mosaic.ratio,
-                                                  (zoomed_tile_width,
-                                                   zoomed_tile_height),
-                                                  pool,
-                                                  workers)))
+    source_tiles = dict(zip(sources,
+                            load_raw_tiles(sources,
+                                           mosaic.ratio,
+                                           (zoomed_tile_width,
+                                            zoomed_tile_height),
+                                           pool,
+                                           workers)))
+
+    #TODO:
+    # 1. remove image after it's picked for a particular spot
+    #    * that algorithm is more like soft-matching after ordering all the images
+    #    * but when there are not enough tiles, then you can prefer
+    #       -- maybe the difference is the probability that you have to choose
+    #          another
+    # 2. keep metadata with images (e.g. tweet ids) and return indexing
 
     # Indicize all the source images by their average color
     source_list = ImageList(source_tiles.values())
+
+    avail2needed = float(len(source_tiles)) / len(rectangles)
+
+    print('amt', len(source_tiles), len(rectangles))
 
     # Compute the average color of each mosaic tile
     mosaic_avg_colors = list(extract_average_colors(mosaic, rectangles, pool,
                                                     workers))
 
-    # Find which source image best fits each mosaic tile
-    best_matching_imgs = list(search_matching_images(source_list,
-                                                     mosaic_avg_colors,
-                                                     pool, workers))
-
     # Shut down the pool of workers
     pool.close()
     pool.join()
+
+    # Find which source image best fits each mosaic tile
+    best_matching_imgs = list(_search_matching_images(source_list,
+                                                      avail2needed,
+                                                     mosaic_avg_colors,
+                                                      ))
+                                                     #pool, workers,
+                                                     #avail2needed))
+
 
     # Apply the zoom factor
     (zoomed_width, zoomed_height) = (tiles * zoomed_tile_width,
@@ -578,9 +612,9 @@ def mosaicify(target, sources, tiles=32, zoom=1):
     mosaic.resize((zoomed_width, zoomed_height))
     rectangles = list(lattice(zoomed_width, zoomed_height, tiles))
 
-    return Mosaic(mosaic, itertools.izip(rectangles,
-                                         itertools.imap(source_tiles.get,
-                                                        best_matching_imgs)))
+    return Mosaic(mosaic, zip(rectangles,
+                              map(source_tiles.get,
+                                  best_matching_imgs)))
 
 
 def _build_parser():
