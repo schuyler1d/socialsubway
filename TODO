@@ -1,0 +1,51 @@
+Jobs/Threads:
+ * Twitter API updates (streaming and/or REST)
+ * downloading images
+ * rendering mosaic + jsondata
+
+Per project:
+ Input:
+  * hashtag/search
+    * default filter:safe
+  * mosaic target image
+  * how many images to collect at minimum
+  * target region (for later) (US/State/City)
+
+ Processing/State
+  * tweet list
+  * earliest tweet/latest tweet (for max_id or since)
+  * images
+    * image count
+  * last render
+    * last render image count
+
+
+Features (for future):
+ * geo search/categorization
+ * default target image is image of country or state?
+
+Basic Interface:
+ * show mosaic
+ * overlay translucent version of image
+ * on click, show tweet + user
+ * maybe show stream of tweeters
+
+
+Mosaic code:
+https://bitbucket.org/iamFIREcracker/osaic/src/02e6a8cc0dcd2415a015090d628258840604b765/osaic.py?fileviewer=file-view-default
+https://github.com/cinemast/OpenMosaic
+https://github.com/ideamonk/PyMos/blob/master/pymos/core.py
+
+
+http://www.sfgiantsflytogether.com/
+https://dev.twitter.com/rest/tools/console
+https://dev.twitter.com/rest/public
+https://dev.twitter.com/oauth/application-only
+  *can't connect to streaming endpoints
+
+twitter python libraries (that having streaming)
+seems to be the big one:
+  https://github.com/tweepy/tweepy
+  http://tweepy.readthedocs.org/en/v3.5.0/getting_started.html
+another one:
+

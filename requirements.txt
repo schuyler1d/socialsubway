@@ -1,0 +1,6 @@
+tweepy
+
+#for osaic
+Pillow
+argparse
+wsgiref
