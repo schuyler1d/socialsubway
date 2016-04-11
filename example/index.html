@@ -1,0 +1,70 @@
+<html>
+  <head>
+    <style>
+      .bigimage {
+        position: absolute;
+        max-width: 100%;
+        max-height: 100%;
+      }
+      .original {
+        opacity: 0.5;
+      }
+      #user {
+        z-index: 500;
+        position: absolute;
+        right:0;
+      }
+    </style>
+  </head>
+  <body>
+    <img class="bigimage mosaic" src="final4.jpg" 
+         />
+    <img class="bigimage original" src="bern.jpg" 
+         />
+    <div id="user"></div>
+    <iframe src="https://twitter.com/intent/user?user_id=2859702526"></iframe>
+    <script
+       src="https://code.jquery.com/jquery-2.2.3.min.js"
+       integrity="sha256-a23g1Nt4dtEYOj7bR+vTu7+T8VP13humZFBJNIYoEJo="
+       crossorigin="anonymous"></script>
+    <script>
+      <!--
+      $('.bigimage').click(function(evt) {
+        var offset = $(this).offset();
+        console.log(evt);
+        console.log(this);
+        var click = {
+         x: evt.pageX - offset.left,
+         y: evt.pageY - offset.top
+        }
+        var x = window.data.width * (click.x/$(this).width());
+        var y = window.data.height * (click.y/$(this).height());
+        for (var i=0,l=data.rectangles.length; l>i; i++) {
+          
+          r = data.rectangles[i];
+          //console.log(r, x, y);
+          if (x >= r[0] && y >= r[1] && r[2] > x  && r[3] > y) {
+             console.log('hi');
+             var current_user = window.data.best_matching[i].match(/\/(\d+)/)[1];
+             console.log(current_user);
+             var atag = $('<a>')
+                 .attr({href:'https://twitter.com/intent/user?user_id='+current_user})
+                 .html('current user ' + current_user)
+                 
+            $('#user').html(atag);
+                 console.log(atag);
+             break;
+          }
+        }
+      });
+      $.getJSON('data.json', function(data) {
+        window.data = data;
+        console.log(data);
+        console.log(data.width);
+        console.log(data.height);
+      
+      });
+      -->
+    </script>
+  </body>
+</html>

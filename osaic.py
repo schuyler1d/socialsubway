@@ -61,6 +61,7 @@ TODO:
 
 from __future__ import division
 import itertools
+import json
 import multiprocessing
 import operator
 import random
@@ -520,7 +521,7 @@ class Mosaic(object):
         self._mosaic.blob.save(destination)
 
 
-def mosaicify(target, sources, tiles=32, zoom=1):
+def mosaicify(target, sources, tiles=32, zoom=1, jsonfile=None):
     """Create mosaic of photos.
 
     The function wraps all process of the creation of a mosaic, given
@@ -612,6 +613,15 @@ def mosaicify(target, sources, tiles=32, zoom=1):
     mosaic.resize((zoomed_width, zoomed_height))
     rectangles = list(lattice(zoomed_width, zoomed_height, tiles))
 
+    if jsonfile:
+        with open(jsonfile, 'w') as jf:
+            jf.write(json.dumps({
+                'rectangles':rectangles,
+                'best_matching': best_matching_imgs,
+                'width': zoomed_width,
+                'height': zoomed_height,
+            }))
+
     return Mosaic(mosaic, zip(rectangles,
                               map(source_tiles.get,
                                   best_matching_imgs)))
@@ -630,6 +640,9 @@ def _build_parser():
     config.add_option("-o", "--output", dest="output", default=None,
                       help="Save output instead of showing it.",
                       metavar="OUTPUT")
+    config.add_option("-j", "--json", dest="jsonfile", default=None,
+                      help="output file for json data on rectangles",
+                      metavar="JSON")
     parser.add_option_group(config)
 
     return parser
@@ -648,7 +661,8 @@ def _main():
         target=args[0],
         sources=set(args[1:] or args),
         tiles=int(options.tiles),
-        zoom=int(options.zoom)
+        zoom=int(options.zoom),
+        jsonfile=options.jsonfile
     )
 
     if options.output is None:
