@@ -62,6 +62,7 @@ TODO:
 from __future__ import division
 import itertools
 import json
+import math
 import multiprocessing
 import operator
 import random
@@ -70,28 +71,14 @@ from optparse import OptionParser
 from optparse import OptionGroup
 from functools import partial
 
+import kdtree
 from PIL import Image
-
-
-
-# Mode of quantization of color components
-QUANTIZATION_MODES = 'bottom middle top'.split()
-
 
 
 def splitter(n, iterable):
     """Split `iterable` into `n` separate buckets.
-    
-    >>> list(splitter(3, range(3)))
-    [[0], [1], [2]]
-    >>> list(splitter(3, range(4)))
-    [[0, 1], [2], [3]]
-    >>> list(splitter(3, range(5)))
-    [[0, 1], [2, 3], [4]]
     >>> list(splitter(3, range(6)))
     [[0, 1], [2, 3], [4, 5]]
-    >>> list(splitter(3, range(7)))
-    [[0, 1, 2], [3, 4], [5, 6]]
     """
     items_per_bucket = len(iterable) / n
     cutoff = 1
@@ -109,58 +96,10 @@ def splitter(n, iterable):
 
 def flatten(iterable):
     """Flatten the input iterable.
-    
     >>> list(flatten([[0, 1], [2, 3]]))
     [0, 1, 2, 3]
-    >>> list(flatten([[0, 1], [2, 3, 4, 5]]))
-    [0, 1, 2, 3, 4, 5]
     """
     return itertools.chain.from_iterable(iterable)
-
-
-def dotproduct(vec1, vec2):
-    """Return dot product of given vectors.
-    
-    >>> v1 = [1, 2, 3, 4]
-    >>> v2 = [5, 6, 7, 8]
-    >>> v3 = [0, 0, 0, 0]
-
-    >>> dotproduct(v1, v2)
-    70
-    >>> dotproduct(v1, v3)
-    0
-    """
-    return sum(map(operator.mul, vec1, vec2))
-
-
-def difference(vec1, vec2):
-    """Return difference between given vectors.
-    
-    >>> v1 = [1, 2, 3, 4]
-    >>> v2 = [5, 6, 7, 8]
-    >>> v3 = [0, 0, 0, 0]
-
-    >>> difference(v2, v1)
-    [4, 4, 4, 4]
-    >>> difference(v2, v3)
-    [5, 6, 7, 8]
-    """
-    return map(operator.sub, vec1, vec2)
-
-
-def squaredistance(vec1, vec2):
-    """Return the square distance between given vectors.
-
-    >>> v1 = [1, 2, 3, 4]
-    >>> v2 = [5, 6, 7, 8]
-    >>> v3 = [0, 0, 0, 0]
-
-    >>> squaredistance(v1, v3)
-    30
-    >>> squaredistance(v2, v1)
-    64
-    """
-    return sum(v ** 2 for v in difference(vec1, vec2))
 
 
 def average_color(img):
@@ -185,82 +124,8 @@ def average_color(img):
             total_blue // num_pixels)
 
 
-def quantize_color(color, levels=8, mode='middle'):
-    """Reduce the spectrum of the given color.
-
-    Each color component is forced to assume only certain values instead
-    depending on the specified number of levels needed. If for example
-    instead of 256 different levels, we need only a couple of them, each
-    color component will be mapped into two ranges, namely [0, 128[ and
-    [128, 256[.
-
-    This way, given that multiple colors are possibly mapped on the same
-    range of values and it is possible to decide to use as final output,
-    the bottom, the middle or the top value of those ranges. Carrying on
-    the example above, by default a color like (10, 10, 10), will match
-    the first range of each component; hence, depending on the chosen
-    mode, it will return (0, 0, 0), (64, 64, 64) or (127, 127, 127).
-
-    >>> red = (255, 0, 0)
-
-    >>> quantize_color(red, 0)
-    Traceback (most recent call last):
-        ...
-    ValueError: Number of levels should be in range ]0, 256].
-
-    >>> quantize_color(red, 257)
-    Traceback (most recent call last):
-        ...
-    ValueError: Number of levels should be in range ]0, 256].
-
-    >>> quantize_color(red, 128, 'asd')
-    Traceback (most recent call last):
-        ...
-    ValueError: Mode should be one of bottom middle top.
-
-    >>> quantize_color(red, 256)
-    (255, 0, 0)
-
-    >>> quantize_color(red, 4, 'bottom')
-    (192, 0, 0)
-    >>> quantize_color(red, 4, 'middle')
-    (224, 32, 32)
-    >>> quantize_color(red, 4, 'top')
-    (255, 63, 63)
-    >>> quantize_color((240, 10, 20), 2, 'middle')
-    (192, 64, 64)
-    """
-    if levels <= 0 or levels > 256:
-        raise ValueError("Number of levels should be in range ]0, 256].")
-    if mode not in QUANTIZATION_MODES:
-        raise ValueError("Mode should be one of %s." %
-                            (' '.join(QUANTIZATION_MODES)))
-
-    if levels == 256:
-        return color
-
-    if mode == 'top':
-        inc = 256 // levels - 1
-    elif mode == 'middle':
-        inc = 256 // levels // 2
-    else: # 'bottom'
-        inc = 0
-
-    # first map each component from the range [0, 256[ to [0, levels[:
-    #       v * levels // 256
-    # then remap values to the range of default values [0, 256[, but
-    # this time instead of obtaining all the possible values, we get
-    # only discrete values:
-    #       .. * 256 // levels
-    # finally, depending on the specified mode, grab the bottom, middle
-    # or top value of the result range:
-    #       .. + inc
-    ret = [(v * levels) // 256 * (256 // levels) + inc for v in color]
-    return tuple(ret)
-
-
 SerializableImage = namedtuple('SerializableImage',
-                               'filename size mode data'.split())
+                               'filename size mode data avg_color'.split())
 
 class ImageWrapper(object):
     """Wrapper around the ``Image`` object from the PIL library.
@@ -282,6 +147,7 @@ class ImageWrapper(object):
         """
         self.filename = kwargs.pop('filename')
         self.blob = kwargs.pop('blob', None)
+        _average_color = kwargs.pop('average_color', True)
         if self.blob is None:
             try:
                 if self.filename.startswith("http://") or self.filename.startswith("https://"):
@@ -290,8 +156,23 @@ class ImageWrapper(object):
                     self.blob = Image.open(file)
                 else:
                     self.blob = Image.open(self.filename)
+                #convert to RGB or getcolors can return all sorts of things
+                self.blob = self.blob.convert("RGB")
             except IOError:
                 raise
+        if _average_color:
+            self._average_color = average_color(self)
+
+    @property
+    def avg_color(self):
+        return self._average_color
+
+    def __getitem__(self, i):
+        #indexable for kd-tree against RGB vals
+        return self._average_color[i]
+
+    def __len__(self):
+        return 3 #dimensions
 
     @property
     def colors(self):
@@ -355,7 +236,7 @@ class ImageWrapper(object):
     def serialize(self):
         """Convert the image wrapper into a `SerializableImage`."""
         return SerializableImage(self.filename, self.size, self.blob.mode,
-                                 self.blob.tobytes())
+                                 self.blob.tobytes(), self.avg_color)
 
     @staticmethod
     def deserialize(raw):
@@ -376,59 +257,35 @@ class ImageList(object):
 
     """
 
-    def __init__(self, images):
+    def __init__(self, tile_image_list):
         """Initialize the internal list of images."""
-        self._img_list = dict()
+        self._used = []
+        self._img_kd_tree = kdtree.create(
+            tile_image_list, dimensions=3)
 
-        for img in images:
-            try:
-                color = average_color(img)
-                qcolor = quantize_color(color)
-                self._img_list.setdefault(qcolor, list()).append((color,[img.filename, False]))
-            except:
-                print("failed some how: "+str(img))
+    def _reset(self):
+        #for when we have to re-use images (sparingly)
+        if len(self._used):
+            self._img_kd_tree = kdtree.create(self._used, dimensions=3)
+            self._used = []
 
     def search(self, color, whenskip=0, skip_list=[]):
         """Search the most similar image in terms of average color."""
-        # first find the group of images having the same quantized
-        # average color.
-        qcolor = quantize_color(color)
-        best_img_list = None
-        best_dist = None
-        best_backukp = []
-        next_skip_list = [a for a in skip_list] #copy
-        for (current_color, img_list) in self._img_list.items():
-            dist = squaredistance(qcolor, current_color)
-            if best_dist is None or dist < best_dist:
-                best_backup = [dist, img_list]
-                if current_color in skip_list:
-                    continue
-                next_skip_list.append(current_color)
-                best_dist = dist
-                best_img_list = img_list
-        # now spot which of the images in the list is equal to the
-        # target one.
-        if best_dist is None:
-            best_dist, best_img_list  = best_backup
-            next_skip_list = []
-        best_filename = None
-        best_backup = None
-        best_dist = None
-        for (current_color, filename) in best_img_list:
-            dist = squaredistance(color, current_color)
-            if best_dist is None or dist < best_dist:
-                best_backup = filename
-                if not filename[1] or whenskip <= random.random():
-                    best_dist = dist
-                    best_filename = filename
-        # finally return the best match.
-        if best_filename is None:
-            return self.search(color, whenskip * 0.9, next_skip_list)
-        best_filename[1] = True
-        return best_filename[0]
+        if len(self._used) and \
+           (self._img_kd_tree.data is None or len(self._img_kd_tree.data) == 0):
+            self._reset()
+
+        found_tileimages = self._img_kd_tree.search_nn(color)
+        if len(found_tileimages) > 0:
+            tileimage = found_tileimages[0]
+            imagewrapper = tileimage.data
+            self._img_kd_tree.remove(imagewrapper, tileimage)
+            self._used.append(imagewrapper)
+
+            return imagewrapper.filename
 
 
-def lattice(width, height, rectangles_per_size):
+def lattice(width, height, rects_width, rects_height=None):
     """Creates a lattice width height big and containing `rectangles_per_size`
     rectangles per size.
 
@@ -442,10 +299,12 @@ def lattice(width, height, rectangles_per_size):
     >>> list(lattice(10, 10, 2))
     [(0, 0, 5, 5), (5, 0, 10, 5), (0, 5, 5, 10), (5, 5, 10, 10)]
     """
-    (tile_width, tile_height) = (width // rectangles_per_size,
-                                 height // rectangles_per_size)
-    for i in range(rectangles_per_size):
-        for j in range(rectangles_per_size):
+    if not rects_height:
+        rects_height = rects_width
+    (tile_width, tile_height) = (width // rects_width,
+                                 height // rects_height)
+    for i in range(rects_height):
+        for j in range(rects_width):
             (x_offset, y_offset) = (j * tile_width, i * tile_height)
             yield (x_offset, y_offset,
                    x_offset + tile_width, y_offset + tile_height)
@@ -470,7 +329,7 @@ def _extract_average_colors(filename, rectangles):
     """Extract from `img` multiple tiles covering areas described by
     `rectangles`"""
     img = ImageWrapper(filename=filename)
-    return [average_color(img.crop(rect)) for rect in rectangles]
+    return [img.crop(rect).avg_color for rect in rectangles]
 
 
 def extract_average_colors(img, rectangles, pool, workers):
@@ -494,7 +353,6 @@ def _search_matching_images(image_list, whenskip, avg_colors):
 
 
 def search_matching_images(image_list, avg_colors, pool, workers, whenskip=0):
-    print ('whenskip', whenskip)
     smi = partial(_search_matching_images, image_list, whenskip)
     return flatten(pool.map(smi,
                             splitter(workers, avg_colors)))
@@ -521,7 +379,7 @@ class Mosaic(object):
         self._mosaic.blob.save(destination)
 
 
-def mosaicify(target, sources, tiles=32, zoom=1, jsonfile=None):
+def mosaicify(target, sources, tiles=None, zoom=1, jsonfile=None):
     """Create mosaic of photos.
 
     The function wraps all process of the creation of a mosaic, given
@@ -553,14 +411,22 @@ def mosaicify(target, sources, tiles=32, zoom=1, jsonfile=None):
     """
     # Load the target image into memory
     mosaic = ImageWrapper(filename=target)
-
     # Generate the list of rectangles identifying mosaic tiles
     (original_width, original_height) = mosaic.size
-    rectangles = list(lattice(original_width, original_height, tiles))
+
+    tiles_height = None
+    if tiles is None:
+        #max width with # tiles used
+        tiles = int(original_width * math.sqrt(len(sources)) / math.sqrt(original_width * original_height))
+        tiles_height = int(original_height * tiles / original_width)
+        print('tile dims:', tiles, tiles_height)
+    else:
+        tiles = int(tiles)
+    rectangles = list(lattice(original_width, original_height, tiles, tiles_height))
 
     # Compute the size of the tiles after the zoom factor has been applied
     (zoomed_tile_width, zoomed_tile_height) = (zoom * original_width // tiles,
-                                               zoom * original_height // tiles)
+                                               zoom * original_height // tiles_height)
 
     # Initialize the pool of workers
     workers = multiprocessing.cpu_count()
@@ -584,8 +450,11 @@ def mosaicify(target, sources, tiles=32, zoom=1, jsonfile=None):
     # 2. keep metadata with images (e.g. tweet ids) and return indexing
 
     # Indicize all the source images by their average color
-    source_list = ImageList(source_tiles.values())
+    source_list = ImageList(list(source_tiles.values()))
 
+    #ratio of how many tiles we need vs how many we want
+    # if >1, then the primary challenge is finding the sorted match
+    # if <1 then the primary challenge is to use what we have, and then repeat
     avail2needed = float(len(source_tiles)) / len(rectangles)
 
     print('amt', len(source_tiles), len(rectangles))
@@ -601,15 +470,13 @@ def mosaicify(target, sources, tiles=32, zoom=1, jsonfile=None):
     # Find which source image best fits each mosaic tile
     best_matching_imgs = list(_search_matching_images(source_list,
                                                       avail2needed,
-                                                     mosaic_avg_colors,
+                                                      mosaic_avg_colors,
                                                       ))
-                                                     #pool, workers,
-                                                     #avail2needed))
 
 
     # Apply the zoom factor
     (zoomed_width, zoomed_height) = (tiles * zoomed_tile_width,
-                                     tiles * zoomed_tile_height)
+                                     tiles_height * zoomed_tile_height)
     mosaic.resize((zoomed_width, zoomed_height))
     rectangles = list(lattice(zoomed_width, zoomed_height, tiles))
 
@@ -633,8 +500,8 @@ def _build_parser():
     parser = OptionParser(usage=usage)
 
     config = OptionGroup(parser, "Configuration Options")
-    config.add_option("-t", "--tiles", dest="tiles", default="32",
-                      help="Number of tiles per side.", metavar="TILES")
+    config.add_option("-t", "--tiles", dest="tiles", default=None,
+                      help="Number of tiles per side -- defaults to maxing # by sources.", metavar="TILES")
     config.add_option("-z", "--zoom", dest="zoom", default="1",
                       help="Zoom level of the mosaic.", metavar="ZOOM")
     config.add_option("-o", "--output", dest="output", default=None,
@@ -660,7 +527,7 @@ def _main():
     mosaic = mosaicify(
         target=args[0],
         sources=set(args[1:] or args),
-        tiles=int(options.tiles),
+        tiles=options.tiles,
         zoom=int(options.zoom),
         jsonfile=options.jsonfile
     )
