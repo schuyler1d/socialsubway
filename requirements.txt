@@ -1,7 +1,10 @@
 tweepy
-kdtree
 
 #for osaic
 Pillow
 argparse
+kdtree
 
+python-social-auth
+Django
+Celery

@@ -1,3 +1,24 @@
+"""
+pid file option
+  https://docs.python.org/2/library/tempfile.html#tempfile.NamedTemporaryFile
+
+import os
+import sys
+
+pid = str(os.getpid())
+pidfile = "/tmp/mydaemon.pid"
+
+if os.path.isfile(pidfile):
+    print "%s already exists, exiting" % pidfile
+    sys.exit()
+file(pidfile, 'w').write(pid)
+try:
+    # Do some actual work here
+finally:
+    os.unlink(pidfile)
+
+"""
+
 import settings
 
 import tweepy
@@ -78,6 +99,7 @@ class StdOutListener(StreamListener):
         print(dd.get('user',{}).keys())
         print(dd.get('user',{}).get('profile_image_url'))
         print(dd.get('text'))
+        print(dd)
         ccc.save_data(
             dd.get('user',{}).get('profile_image_url'),
             dd.get('id_str',''),
@@ -92,6 +114,7 @@ stdout = StdOutListener()
 
 stream = Stream(auth, stdout)
 #stream.filter(track=['#BernieOrBust'])
-stream.filter(track=['#FeelTheBern'])
+stream.filter(track=['#FeelTheBern'], async=True)
 
+#stream.disconnect() causes thread to end/stop
 #os.listdir('./')

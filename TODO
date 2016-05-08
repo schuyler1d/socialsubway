@@ -1,3 +1,14 @@
+Steps:
+1. twitter:
+   * login integration
+   * collector manager
+2. image processing:
+   * make osaic.py a library: passing file handles
+   * django update/creation command (using files)
+     * cron job with a 'ready' flag might be enough here
+
+
+
 Jobs/Threads:
  * Twitter API updates (streaming and/or REST)
  * downloading images
@@ -48,4 +59,24 @@ seems to be the big one:
   https://github.com/tweepy/tweepy
   http://tweepy.readthedocs.org/en/v3.5.0/getting_started.html
 another one:
+
+Similar commercial tools:
+http://hyperactivate.com/hashtagart-mosaic/
+http://picturemosaics.com/online/
+
+Good example:
+http://www.sfgiantsflytogether.com/
+
+Nik:
+For the MVP, I think the tool should be able to collect and download public profile photos from Twitter users who use a specific hashtag, and then upload them into a free mosaic creation tool like Mosaicly.
+
+Eventually, the tool would be able to pull from Twitter, Facebook, Instagram, and Tumblr, as well as take direct submissions of photos, into our own mosaic creating back-end system in real time.
+
+Then later down the line, the mosaic would be interactive (i.e. People could zoom in and search for themselves), embedable, have performance analytics and other bells and whistles that are yet to be determined.
+
+Ultimately, it would be incredible to have a turn-key solution similar to Hyperactivate's product.
+
+Not sure where this fits in the development, but it would ask be great to be able to integrate with something like CleanSpeak, a service which automatically flags and rejects content that has hate speech, porn, etc. Not exactly sure how it works.
+
+
 

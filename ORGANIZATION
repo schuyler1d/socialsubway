@@ -1,0 +1,18 @@
+* twitter image downloader
+
+* thread for each mosaic/trend
+- inputs: count for when to build a new image (or send a signal), search
+- when enough data is created,
+-- start thread to generate new image
+
+* thread for tracking them all
+- on startup get from database and current state
+-- start threads for each mosaic
+
+
+
+
+* django updates info:
+- blacklist
+- which things to be generating
+
