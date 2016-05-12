@@ -71,6 +71,21 @@ SOCIAL_AUTH_PIPELINE = (
         'social.pipeline.user.user_details',
     )
 
+#defaults to being able to login to twitter and create mosaic
+# with values.  Override in local_settings to change permissions
+STAFF_DEFAULT_PERMS = [
+    'Can add tweeter blocklist',
+    'Can change tweeter blocklist',
+    'Can delete tweeter blocklist',
+    'Can add twitter collector',
+    'Can change twitter collector',
+    'Can add twitter mosaic',
+    'Can change twitter mosaic',
+    #really for viewing
+    'Can change mosaic render',
+    'Can change tweet mosaic source',
+    ]
+
 ROOT_URLCONF = 'mosaicmanager.urls'
 
 TEMPLATES = [

@@ -22,6 +22,10 @@ class MosaicSourceImage(models.Model):
     image_width = models.PositiveIntegerField(null=True)
     image_height = models.PositiveIntegerField(null=True)
 
+    def save(self, *args, **kw):
+        self.content_type = ContentType.objects.get_for_model(self)
+        super(MosaicSourceImage, self).save(*args, **kw)
+    
 
 class Mosaic(models.Model):
 
@@ -55,6 +59,11 @@ class Mosaic(models.Model):
                                            related_name="mosaics")
 
     public_url = models.URLField(blank=True, null=True)
+
+
+    def save(self, *args, **kw):
+        self.content_type = ContentType.objects.get_for_model(self)
+        super(Mosaic, self).save(*args, **kw)
     
 
 class MosaicRender(models.Model):

@@ -1,4 +1,7 @@
 from django.db import models
+from django.contrib.contenttypes.models import ContentType
+
+from social.apps.django_app.default.models import UserSocialAuth
 
 from mosaicrenderer.models import Mosaic, MosaicSourceImage
 
@@ -13,28 +16,32 @@ class TweeterBlocklist(models.Model):
     username = models.CharField(max_length=15)
 
 
-class TwitterCollector(models.Model):
-    access_token = models.TextField()
-    access_token_secret = models.TextField()
-
-
 class TweetMosaicSource(MosaicSourceImage):
     #probaby tweet message
+    tweet_id = models.CharField(max_length=128)
+    user_id = models.CharField(max_length=128)
     message = models.TextField(default="",
                                help_text="maybe not always the full message/post")
     
-    useralias = models.CharField(max_length=128,
-                                 help_text="aka username of service")
+    username = models.CharField(max_length=128)
 
-    link = models.URLField(blank=True)
-    #
+    image_url = models.URLField(blank=True, help_text="url to IMAGE")
     geo = models.CharField(max_length=128)
 
     
 class TwitterMosaic(Mosaic):
 
     twitter_search = models.TextField(blank=True)
-    collector = models.ForeignKey(TwitterCollector, blank=True)
+    collector = models.ForeignKey(
+        UserSocialAuth, blank=True, null=True,
+        on_delete=models.SET_NULL,
+        limit_choices_to={'provider': 'twitter'},
+        help_text=("Which account will collect the tweets, under a quota. "
+                   "Using the same account for more than one active mosaic split your "
+                   "tweet quota between the two queries (i.e. you will "
+                   "get half as many tweets/hour or less)"
+        )
+    )
 
     @classmethod
     def start_collectors(cls):
