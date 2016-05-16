@@ -38,7 +38,10 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'social.apps.django_app.default',    
     'mosaicrenderer',
-    'twittercollector',
+    #this auto-starts processes for collecting tweets
+    #  just do 'twittercollector' if you want to manage
+    #  collecting separately
+    'twittercollector.apps.TwitterCollectorConfig',
 ]
 
 MIDDLEWARE_CLASSES = [

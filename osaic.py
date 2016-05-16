@@ -66,6 +66,7 @@ import math
 import multiprocessing
 import operator
 import random
+import time
 from collections import namedtuple
 from optparse import OptionParser
 from optparse import OptionGroup
@@ -157,6 +158,7 @@ class ImageWrapper(object):
                 else:
                     self.blob = Image.open(self.filename)
                 #convert to RGB or getcolors can return all sorts of things
+                #is this slow?
                 self.blob = self.blob.convert("RGB")
             except IOError:
                 raise
@@ -204,7 +206,6 @@ class ImageWrapper(object):
         A consequence of the ratio modification, is image shrink; the
         size of the result image need to be modified to match desired
         ratio; consequently, part of the image will be thrown away.
-
         """
         if ratio < 0:
             raise ValueError("Ratio could not assume negative values.")
@@ -269,17 +270,27 @@ class ImageList(object):
             self._img_kd_tree = kdtree.create(self._used, dimensions=3)
             self._used = []
 
+    stime = 0.0
+    rtime = 0.0
+            
     def search(self, color, whenskip=0, skip_list=[]):
         """Search the most similar image in terms of average color."""
         if len(self._used) and \
            (self._img_kd_tree.data is None or len(self._img_kd_tree.data) == 0):
             self._reset()
 
+        
+        #t = time.time()
+        #this is superslow
         found_tileimages = self._img_kd_tree.search_nn(color)
+        #TODO: switch the approach here to matching tiles to the best placement rather than the reverse
+        #self.stime = self.stime + time.time() - t
         if len(found_tileimages) > 0:
             tileimage = found_tileimages[0]
             imagewrapper = tileimage.data
+            #t= time.time()
             self._img_kd_tree.remove(imagewrapper, tileimage)
+            #self.rtime = self.rtime + time.time() - t
             self._used.append(imagewrapper)
 
             return imagewrapper.filename
@@ -349,7 +360,9 @@ def extract_average_colors(img, rectangles, pool, workers):
 
 def _search_matching_images(image_list, whenskip, avg_colors):
     """Gets the name of tiles that best match the given list of colors."""
-    return [image_list.search(color, whenskip) for color in avg_colors]
+    x = [image_list.search(color, whenskip) for color in avg_colors]
+    #print ('time searching', image_list.stime, image_list.rtime)
+    return x
 
 
 def search_matching_images(image_list, avg_colors, pool, workers, whenskip=0):
@@ -377,6 +390,58 @@ class Mosaic(object):
     def save(self, destination):
         self._initialize()
         self._mosaic.blob.save(destination)
+
+
+def skymosaic(target, sources, strategy, loader):
+    """
+    target.size
+    target.width
+    target.height
+
+    imagewrapper
+    returns Mosaic
+    Mosaic.
+    """
+    #Step 0. lattice = strategy(target.width, target.height, source.count, zoom)
+    #Step 1. needs file access (or db memory):
+    #  determine source average colors, determine target-lattice colors
+    #Step 2. map sources to lattice
+    #   search strategy
+    #Step 3. needs file access read/write
+    #  generate based on lattice map
+    # API should be able to skip pre-done steps
+    """
+      mosaicify(target, sources, sizer=MaximizeFill(zoom=1), color_reader=FileColorReader(), chooser=kd_tree_chooser, renderer=BaseMosaicRenderer(zoom=1)):
+          #assumed API for source, target for defaults
+          # source.average_color(rect=None) -> rgb color
+          # source.get_image(width, height) -> image #resized, if necessary
+
+          lattice = sizer.lattice or sizer(target.width, target.height, len(sources))
+
+          target_color_lattice = FileColorReader.target_mapper(target, lattice)
+          #this may load images into source objects
+          source_colors = FileColorReader.getcolors(sources)
+
+          #->indexes for sources
+          sourceindex2lattice_mapping = chooser(lattice, target_color_lattice, source_colors)
+
+          return renderer.mosaic(target, lattice, sourceindex2lattice_mapping,
+                                 source_colors, target_color_lattice)
+
+    """
+    
+    #0 get width/height of target
+    #1. determine lattice: tiles_width, tiles_height <- (target.width, target.height, source.count, zoom?)
+    #2. get average colors from tiles (this may load their size)
+    #3. return [lattice, tiles, target_average_colors, tile_average_colors]
+
+    #4. with mapping: generate image
+
+    #DB version
+    # first time source image is calculated -> save color
+    # when same tiles_x, tiles_y request is made, then use x,y positions from db with average colors
+    # 
+    pass
 
 
 def mosaicify(target, sources, tiles=None, zoom=1, jsonfile=None):
@@ -410,7 +475,9 @@ def mosaicify(target, sources, tiles=None, zoom=1, jsonfile=None):
 
     """
     # Load the target image into memory
+
     mosaic = ImageWrapper(filename=target)
+            
     # Generate the list of rectangles identifying mosaic tiles
     (original_width, original_height) = mosaic.size
 
@@ -433,6 +500,7 @@ def mosaicify(target, sources, tiles=None, zoom=1, jsonfile=None):
     pool = multiprocessing.Pool(workers)
 
     # Load tiles into memory and resize them accordingly
+    #slowish
     source_tiles = dict(zip(sources,
                             load_raw_tiles(sources,
                                            mosaic.ratio,
@@ -441,16 +509,13 @@ def mosaicify(target, sources, tiles=None, zoom=1, jsonfile=None):
                                            pool,
                                            workers)))
 
-    #TODO:
-    # 1. remove image after it's picked for a particular spot
-    #    * that algorithm is more like soft-matching after ordering all the images
-    #    * but when there are not enough tiles, then you can prefer
-    #       -- maybe the difference is the probability that you have to choose
-    #          another
-    # 2. keep metadata with images (e.g. tweet ids) and return indexing
-
+    # TODO: source_objects tracked to position (and not indexed by filename)
+    
     # Indicize all the source images by their average color
     source_list = ImageList(list(source_tiles.values()))
+    #t.append(time.time())
+    #print('4time ', t[-1]-t[-2], t[-1]-t[0])
+            
 
     #ratio of how many tiles we need vs how many we want
     # if >1, then the primary challenge is finding the sorted match
@@ -468,11 +533,11 @@ def mosaicify(target, sources, tiles=None, zoom=1, jsonfile=None):
     pool.join()
 
     # Find which source image best fits each mosaic tile
+    #slowslow 62sec for 5000 images
     best_matching_imgs = list(_search_matching_images(source_list,
                                                       avail2needed,
                                                       mosaic_avg_colors,
                                                       ))
-
 
     # Apply the zoom factor
     (zoomed_width, zoomed_height) = (tiles * zoomed_tile_width,
@@ -480,6 +545,7 @@ def mosaicify(target, sources, tiles=None, zoom=1, jsonfile=None):
     mosaic.resize((zoomed_width, zoomed_height))
     rectangles = list(lattice(zoomed_width, zoomed_height, tiles))
 
+    #TODO: move this out
     if jsonfile:
         with open(jsonfile, 'w') as jf:
             jf.write(json.dumps({
@@ -489,9 +555,11 @@ def mosaicify(target, sources, tiles=None, zoom=1, jsonfile=None):
                 'height': zoomed_height,
             }))
 
-    return Mosaic(mosaic, zip(rectangles,
-                              map(source_tiles.get,
-                                  best_matching_imgs)))
+    m = Mosaic(mosaic, zip(rectangles,
+                           map(source_tiles.get,
+                               best_matching_imgs)))
+            
+    return m
 
 
 def _build_parser():

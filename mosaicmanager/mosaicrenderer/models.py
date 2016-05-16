@@ -22,6 +22,8 @@ class MosaicSourceImage(models.Model):
     image_width = models.PositiveIntegerField(null=True)
     image_height = models.PositiveIntegerField(null=True)
 
+    average_color = models.CharField(null=True, blank=True, max_length=32)
+    
     def save(self, *args, **kw):
         self.content_type = ContentType.objects.get_for_model(self)
         super(MosaicSourceImage, self).save(*args, **kw)
@@ -50,6 +52,7 @@ class Mosaic(models.Model):
     minimum_image_count = models.PositiveIntegerField()
     incremental_update_count = models.PositiveIntegerField()
 
+    opacity = models.FloatField(default=0.5)
     
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     modified_at = models.DateTimeField(auto_now=True)
@@ -87,3 +90,7 @@ class SourcePosition(models.Model):
     source_image = models.ForeignKey(MosaicSourceImage)
     x = models.PositiveIntegerField()
     y = models.PositiveIntegerField()
+
+    average_color = models.CharField(null=True, blank=True,
+                                     max_length=32,
+                                     help_text="average color for target")

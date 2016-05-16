@@ -3,7 +3,9 @@ Steps:
    * login integration
    * collector manager
 2. image processing:
-   * make osaic.py a library: passing file handles
+   * make osaic.py a library: passing file or db-obj handles
+     osaic.mosaicify(target_image=dbobj, source_images=[source_image db_objs (or SourcePosition objs)], class=MosaicRender, strategy=Strategy), zoom=1,
+            Strategy(targetX,targetY,num_sources)
    * django update/creation command (using files)
      * cron job with a 'ready' flag might be enough here
 
