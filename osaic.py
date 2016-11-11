@@ -57,6 +57,35 @@ TODO:
       the image barycenter in order to throw away useless parts of the
       image.
 
+GOALS OF ABSTRACT API:
+
+* Keep the files use-case simple
+  * if the images had not been processed at all, then 
+    it should still be efficient to sample all the tiles down first (to the tile size),
+       and then sample the colors based on that
+       (rather than the reverse, which the mosaic process needs, but would be slower)
+* Abstraction enough for Django/db to utilize/leverage pre-processed information like:
+  * average color of a tile
+  * dimensions of a tile
+  * lattice_cache (of a certain wxh of colors)
+* Maintain opportunity for parallelization:
+  * ?should not require tiles to be all pre-loaded
+* Artifacts of process should be sent-back as well for utilization/caching with
+  future rounds.
+
+INPUTS
+ stage 1: source images, target images, width/height 'goals'
+ stage 2: source image (source_image_id) hue/lum averages,
+          target tile (target_image_id, x, y) with hue/lum averages
+ stage 3: lattice matches, source image resized tiles
+
+OUTPUTS:
+ stage 1: get lattice(dims, num_tiles), get colors
+ stage 2: match targets/sources
+ stage 3: generate mosaic
+
+
+
 """
 
 from __future__ import division
@@ -101,6 +130,31 @@ def flatten(iterable):
     [0, 1, 2, 3]
     """
     return itertools.chain.from_iterable(iterable)
+
+
+def average_color(img):
+    """Return the average color of the given image.
+
+    The calculus of the average color has been implemented by looking at
+    each pixel of the image and accumulate each rgb component inside
+    separate counters.
+
+    """
+    # this is slower, but cool
+    # https://github.com/cortesi/scurve/tree/master/scurve
+    # return img.blob.resize((1,1)).getcolors(1)[0][1]
+    # print(img)
+    # print(img.__dict__)
+    (width, height) = img.size
+    num_pixels = width * height
+    (total_red, total_green, total_blue) = (0, 0, 0)
+    for (occurrences, (red, green, blue)) in img.colors:
+        total_red += occurrences * red
+        total_green += occurrences * green
+        total_blue += occurrences * blue
+    return (total_red // num_pixels,
+            total_green // num_pixels,
+            total_blue // num_pixels)
 
 
 SerializableImage = namedtuple('SerializableImage',
@@ -407,6 +461,7 @@ class BaseColorReader:
     def getcolors(sources):
         return [s.average_color() for s in sources]
 
+<<<<<<< HEAD
     @classmethod
     def average_color(cls, img):
         """Return the average color of the given image.
@@ -435,20 +490,29 @@ def skymosaic(target, sources,
               color_reader=BaseColorReader,
               chooser=kd_tree_chooser,
               renderer=BaseMosaicRenderer(zoom=1)):
+    #def skymosaic(targets, sources, strategy, writer):
     """
-    target.size
+    targets
     target.width
     target.height
+    target.getfile/blob
 
-    imagewrapper
-    returns Mosaic
-    Mosaic.
+    sources.getfile/blob(sourcekey, width=None, height=None)
+    sources.getcolor(sourcekey)
+    sources.initialize(target_width, target_height, 
+      #note will target_width/height ever be effected by sources?
+      #  quantity of sources will determine that
+    
+    strategy.calculate_lattice
+    strategy.match_colors(source_colors_list, lattice)
+
+    writer(target, sources, strategy, final_mosaic_lattice)
     """
-    #Step 0. lattice = strategy(target.width, target.height, source.count, zoom)
+    #Step 0. lattice = strategy.build_lattice(target.width, target.height, source.count, zoom)
     #Step 1. needs file access (or db memory):
     #  determine source average colors, determine target-lattice colors
     #Step 2. map sources to lattice
-    #   search strategy
+    #   strategy.match_colors(source_list_colors, lattice)
     #Step 3. needs file access read/write
     #  generate based on lattice map
     # API should be able to skip pre-done steps
@@ -471,7 +535,8 @@ def skymosaic(target, sources,
 
 
     #DB version
-    # first time source image is calculated -> save color
+    # source image colors should be calculated upon download -- so not in this loop
+    # - but for other use-cases, should you be able to get the color calculations?
     # when same tiles_x, tiles_y request is made, then use x,y positions from db with average colors
     return renderer.mosaic(target, lattice, source2lattice_mapping,
                            sources, color_data)
@@ -535,6 +600,10 @@ def mosaicify(target, sources, tiles=None, zoom=1, jsonfile=None):
 
     # Load tiles into memory and resize them accordingly
     #slowish
+    # this is only important here, because we don't have the average color
+    #   otoh, if you *are* loading the tiles from files and will do the
+    #   conversion in the same write/process, then this is good/useful
+    #   so, 'sources' should cache this
     source_tiles = dict(zip(sources,
                             load_raw_tiles(sources,
                                            mosaic.ratio,
@@ -558,7 +627,7 @@ def mosaicify(target, sources, tiles=None, zoom=1, jsonfile=None):
 
     print('amt', len(source_tiles), len(rectangles))
 
-    # Compute the average color of each mosaic tile
+    # Compute the target's average color of each mosaic tile-section
     mosaic_avg_colors = list(extract_average_colors(mosaic, rectangles, pool,
                                                     workers))
 
@@ -576,10 +645,18 @@ def mosaicify(target, sources, tiles=None, zoom=1, jsonfile=None):
     # Apply the zoom factor
     (zoomed_width, zoomed_height) = (tiles * zoomed_tile_width,
                                      tiles_height * zoomed_tile_height)
+    # why do we do this?  for the outputted image?!?
+    #   otherwise, we don't care -- we can do that client-side or whatever
     mosaic.resize((zoomed_width, zoomed_height))
     rectangles = list(lattice(zoomed_width, zoomed_height, tiles))
 
     #TODO: move this out
+    #possible artifacts:
+    #  * tile-square: source mapping (with metadata, e.g. author, tweet)
+    #  * final height/width, tile, count
+    #  * which sources were used
+    #  * rectangles
+    #  * obviously -- final mosaic image
     if jsonfile:
         with open(jsonfile, 'w') as jf:
             jf.write(json.dumps({

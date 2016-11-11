@@ -5,3 +5,4 @@ ve
 *#
 .#*
 *.sqlite3
+rust/mosaic/target
