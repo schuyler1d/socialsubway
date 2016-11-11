@@ -8,3 +8,6 @@ kdtree
 python-social-auth
 Django
 Celery
+
+#http://channels.readthedocs.io/en/latest/
+channels

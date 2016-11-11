@@ -103,28 +103,6 @@ def flatten(iterable):
     return itertools.chain.from_iterable(iterable)
 
 
-def average_color(img):
-    """Return the average color of the given image.
-
-    The calculus of the average color has been implemented by looking at
-    each pixel of the image and accumulate each rgb component inside
-    separate counters.
-
-    """
-    # print(img)
-    # print(img.__dict__)
-    (width, height) = img.size
-    num_pixels = width * height
-    (total_red, total_green, total_blue) = (0, 0, 0)
-    for (occurrences, (red, green, blue)) in img.colors:
-        total_red += occurrences * red
-        total_green += occurrences * green
-        total_blue += occurrences * blue
-    return (total_red // num_pixels,
-            total_green // num_pixels,
-            total_blue // num_pixels)
-
-
 SerializableImage = namedtuple('SerializableImage',
                                'filename size mode data avg_color'.split())
 
@@ -168,6 +146,15 @@ class ImageWrapper(object):
     @property
     def avg_color(self):
         return self._average_color
+
+    def average_color(self, rect=None):
+        if rect is None:
+            if self._average_color:
+                return self._average_color
+            elif self.blob:
+                self._average_color = BaseColorReader.average_color(self)
+        else:
+            return self.crop(rect).avg_color
 
     def __getitem__(self, i):
         #indexable for kd-tree against RGB vals
@@ -296,31 +283,6 @@ class ImageList(object):
             return imagewrapper.filename
 
 
-def lattice(width, height, rects_width, rects_height=None):
-    """Creates a lattice width height big and containing `rectangles_per_size`
-    rectangles per size.
-
-    The lattice is returned as a list of rectangle definitions, which are
-    tuples containing:
-        - top-left point x offset
-        - top-left point y offset
-        - bottom-right point x offset
-        - bottom-right point y offset
-
-    >>> list(lattice(10, 10, 2))
-    [(0, 0, 5, 5), (5, 0, 10, 5), (0, 5, 5, 10), (5, 5, 10, 10)]
-    """
-    if not rects_height:
-        rects_height = rects_width
-    (tile_width, tile_height) = (width // rects_width,
-                                 height // rects_height)
-    for i in range(rects_height):
-        for j in range(rects_width):
-            (x_offset, y_offset) = (j * tile_width, i * tile_height)
-            yield (x_offset, y_offset,
-                   x_offset + tile_width, y_offset + tile_height)
-
-
 def _load_raw_tiles(filenames, ratio, size):
     def func(filename):
         img = ImageWrapper(filename=filename)
@@ -391,8 +353,88 @@ class Mosaic(object):
         self._initialize()
         self._mosaic.blob.save(destination)
 
+class MaximizeFillSizer:
 
-def skymosaic(target, sources, strategy, loader):
+    lattice = None
+
+    def __init__(self, zoom=1, tiles_across=None):
+        self.zoom = zoom
+        self.tiles_width = tiles_across
+
+    def get_lattice(self, width, height, source_count):
+        tiles_height = None
+        if self.tiles_width is None:
+            #max width with # tiles used
+            tiles_width = int(width * math.sqrt(source_count) / math.sqrt(width * height))
+            tiles_height = int(height * tiles / original_width)
+        else:
+            tiles_width = int(self.tiles_width)
+        return list(self.make_lattice(width, height, tiles_width, tiles_height))
+
+    def make_lattice(self, width, height, rects_width, rects_height=None):
+        """Creates a lattice width height big and containing `rectangles_per_size`
+        rectangles per size.
+
+        The lattice is returned as a list of rectangle definitions, which are
+        tuples containing:
+        - top-left point x offset
+        - top-left point y offset
+        - bottom-right point x offset
+        - bottom-right point y offset
+
+        >>> list(lattice(10, 10, 2))
+        [(0, 0, 5, 5), (5, 0, 10, 5), (0, 5, 5, 10), (5, 5, 10, 10)]
+        """
+        if not rects_height:
+            rects_height = rects_width
+        (tile_width, tile_height) = (width // rects_width,
+                                     height // rects_height)
+        for i in range(rects_height):
+            for j in range(rects_width):
+                (x_offset, y_offset) = (j * tile_width, i * tile_height)
+                yield (x_offset, y_offset,
+                       x_offset + tile_width, y_offset + tile_height)
+
+
+class BaseColorReader:
+    """
+    assumes target, source have the following attributes:
+     .average_color(rect=None)
+    """
+    def target_mapper(self, target, lattice):
+        return [target.average_color(rect=rect) for rect in lattice]
+
+    def getcolors(sources):
+        return [s.average_color() for s in sources]
+
+    @classmethod
+    def average_color(cls, img):
+        """Return the average color of the given image.
+        
+        The calculus of the average color has been implemented by looking at
+        each pixel of the image and accumulate each rgb component inside
+        separate counters.
+        
+        """
+        # print(img)
+        # print(img.__dict__)
+        (width, height) = img.size
+        num_pixels = width * height
+        (total_red, total_green, total_blue) = (0, 0, 0)
+        for (occurrences, (red, green, blue)) in img.colors:
+            total_red += occurrences * red
+            total_green += occurrences * green
+            total_blue += occurrences * blue
+        return (total_red // num_pixels,
+                total_green // num_pixels,
+                total_blue // num_pixels)
+
+
+def skymosaic(target, sources,
+              sizer=MaximizeFillSizer(zoom=1),
+              color_reader=BaseColorReader,
+              chooser=kd_tree_chooser,
+              renderer=BaseMosaicRenderer(zoom=1)):
     """
     target.size
     target.width
@@ -410,38 +452,30 @@ def skymosaic(target, sources, strategy, loader):
     #Step 3. needs file access read/write
     #  generate based on lattice map
     # API should be able to skip pre-done steps
-    """
-      mosaicify(target, sources, sizer=MaximizeFill(zoom=1), color_reader=FileColorReader(), chooser=kd_tree_chooser, renderer=BaseMosaicRenderer(zoom=1)):
-          #assumed API for source, target for defaults
-          # source.average_color(rect=None) -> rgb color
-          # source.get_image(width, height) -> image #resized, if necessary
+    #assumed API for source, target for defaults
+    # source.average_color(rect=None) -> rgb color
+    # source.get_image(width, height) -> image #resized, if necessary
 
-          lattice = sizer.lattice or sizer(target.width, target.height, len(sources))
+    lattice = sizer.lattice or sizer.get_lattice(target.width, target.height, len(sources))
 
-          target_color_lattice = FileColorReader.target_mapper(target, lattice)
-          #this may load images into source objects
-          source_colors = FileColorReader.getcolors(sources)
+    #color_data.source_colors (order corresponds to sources[])
+    #          .target_color_lattice (order corresponds to lattice[])
+    #(optional).sources_resized (order corresponds to sources[])
+    #    this can be a by product so can be done in this step
+    color_data = color_reader.target_mapper(target, sources, lattice)
 
-          #->indexes for sources
-          sourceindex2lattice_mapping = chooser(lattice, target_color_lattice, source_colors)
+    #->indexes for sources
+    source2lattice_mapping = chooser(color_data.source_colors,
+                                     color_data.target_color_lattice,
+                                     lattice)
 
-          return renderer.mosaic(target, lattice, sourceindex2lattice_mapping,
-                                 source_colors, target_color_lattice)
-
-    """
-    
-    #0 get width/height of target
-    #1. determine lattice: tiles_width, tiles_height <- (target.width, target.height, source.count, zoom?)
-    #2. get average colors from tiles (this may load their size)
-    #3. return [lattice, tiles, target_average_colors, tile_average_colors]
-
-    #4. with mapping: generate image
 
     #DB version
     # first time source image is calculated -> save color
     # when same tiles_x, tiles_y request is made, then use x,y positions from db with average colors
-    # 
-    pass
+    return renderer.mosaic(target, lattice, source2lattice_mapping,
+                           sources, color_data)
+
 
 
 def mosaicify(target, sources, tiles=None, zoom=1, jsonfile=None):

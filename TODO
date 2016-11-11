@@ -36,6 +36,10 @@ Per project:
 Features (for future):
  * geo search/categorization
  * default target image is image of country or state?
+ * !! mosaic animated gifs (x frames)
+ * !! mosaic with geo position e.g. if a state or state abbrev is in tweet, then 
+      locate them on US map
+ 
 
 Basic Interface:
  * show mosaic
