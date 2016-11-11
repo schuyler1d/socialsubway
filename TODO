@@ -81,4 +81,36 @@ Ultimately, it would be incredible to have a turn-key solution similar to Hypera
 Not sure where this fits in the development, but it would ask be great to be able to integrate with something like CleanSpeak, a service which automatically flags and rejects content that has hate speech, porn, etc. Not exactly sure how it works.
 
 
+Image processing nerd-sniping
+=============================
+
+* see the pixel_hash and pixel_cmp methods here:
+  https://github.com/python-pillow/Pillow/blob/master/libImaging/Quant.c#L68
+  that PILlow uses to quantize image (with k-means)
+  seems like the best way to 'reduce' the colors if we don't want just one
+
+
+How to best-match tiles to locations?
+-------------------------------------
+
+Strategy Goals:
+* optiimizing color choice: best image (use lower N and then pick/optimize based on color matches)
+* uniqueness: every tile should be a different image
+* guarantee participation: every one should be in at least one iteration?
+  (interface to 'find oneself'; user-->image)
+
+Twitter strategy:
+1. get tweets.  store all tweets, even if users are duplicated
+2. each source image AND target tile should have average hue AND average luminance
+3. group target tiles (possibly across many images) into buckets of:
+   X colors, with anything of too-high or too-low luminance into one bucket
+   (note: save this distribution for analysis, and help to the moderators of what kind of
+          source images they want to add/provide)
+4. within buckets, move things in/out based on luminance, and then sort within and match
+
+
+Making the participation problem easier:
+* multiple images (with different color schemes) [possibly ]
+* images with 'color categories' -- i.e. the colors don't matter as much as the distinctions
+  -- and then we group color-palletes (basically multiple images but 'one source', along with 'x' pallettes)
 
